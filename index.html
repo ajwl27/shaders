@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GPU Atelier</title>
+<meta name="description" content="Real-time WebGL2 pieces, including a 3D scene that gradient-descends into your drawing.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%2307080a'/><circle cx='8' cy='8' r='4' fill='%23c8f135'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<div id="veil"></div>
+
+<nav id="rail">
+  <header>
+    <h1>GPU<span>Atelier</span></h1>
+    <p class="sub">real-time webgl2</p>
+  </header>
+  <ol id="pieces"></ol>
+  <footer>
+    <a href="https://github.com/ajwl27/shaders" target="_blank" rel="noopener">source ↗</a>
+    <span class="keys"><b>H</b> hide ui &nbsp; <b>F</b> fullscreen</span>
+  </footer>
+</nav>
+
+<aside id="panel">
+  <div id="panel-head">
+    <h2 id="piece-title">—</h2>
+    <p id="piece-blurb"></p>
+  </div>
+  <div id="controls"></div>
+</aside>
+
+<div id="hud"><span id="fps">—</span><span id="res"></span></div>
+
+<div id="fatal" hidden>
+  <h2>No WebGL2</h2>
+  <p>This gallery needs WebGL2. Try a current desktop Chrome, Firefox, Edge or Safari.</p>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

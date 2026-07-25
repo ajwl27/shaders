@@ -40,13 +40,19 @@ solid; one silhouette alone just yields a cardboard cutout.
 
 ## Running locally
 
-ES modules need a real origin, so `file://` won't work. Any static server does:
+ES modules need a real origin, so `file://` won't work:
 
 ```bash
-python -m http.server 8000
+python tools/serve.py
 ```
 
 Then open <http://localhost:8000>.
+
+Use that rather than `python -m http.server`. On Windows the stdlib server reads
+MIME types from the registry, where `.js` is often `text/plain` — and browsers
+refuse to execute ES modules served with a non-JavaScript MIME type, so the page
+comes up blank with no console error. `tools/serve.py` pins the types and
+disables caching.
 
 ## Requirements
 
