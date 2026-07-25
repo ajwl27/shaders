@@ -460,6 +460,17 @@ body.hide-ui #veil { opacity: 0; }
   z-index: 50;
   background: var(--bg);
 }
+
+/*
+ * Required, and not optional the way it looks.
+ *
+ * The `hidden` attribute only hides an element through the user agent rule
+ * `[hidden] { display: none }`, which an ID selector outranks. So `#fatal`
+ * setting `display: grid` quietly overrode it and this panel — opaque,
+ * full-viewport, z-index 50 — was painted over a perfectly working gallery on
+ * every load, for everyone.
+ */
+#fatal[hidden] { display: none; }
 #fatal h2 { color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }
 #fatal p { color: var(--dim); max-width: 52ch; line-height: 1.65; margin: 0 auto; }
 #fatal pre {
