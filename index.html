@@ -6,7 +6,13 @@
 <title>GPU Atelier</title>
 <meta name="description" content="Real-time WebGL2 pieces, including a 3D scene that gradient-descends into your drawing.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%2307080a'/><circle cx='8' cy='8' r='4' fill='%23c8f135'/></svg>">
-<link rel="stylesheet" href="css/style.css">
+<!--
+  Versioned deliberately. GitHub Pages serves assets with max-age=600, and a
+  stale stylesheet is exactly what let the failure panel sit invisibly on top
+  of the gallery: the fix shipped, and browsers kept painting the bug for
+  another ten minutes. Bump this whenever style.css changes.
+-->
+<link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body>
 
