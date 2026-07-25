@@ -461,7 +461,23 @@ body.hide-ui #veil { opacity: 0; }
   background: var(--bg);
 }
 #fatal h2 { color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 13px; }
-#fatal p { color: var(--dim); max-width: 42ch; line-height: 1.6; }
+#fatal p { color: var(--dim); max-width: 52ch; line-height: 1.65; margin: 0 auto; }
+#fatal pre {
+  margin: 22px auto 0;
+  padding: 12px 14px;
+  max-width: 62ch;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--dimmer);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  user-select: text;
+}
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

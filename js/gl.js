@@ -12,15 +12,46 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+/**
+ * Ask for a context and capture why it failed if it did.
+ *
+ * Browsers report the actual reason through a `webglcontextcreationerror`
+ * event, not through the null return, so a bare getContext() call throws away
+ * the only useful information available. "Try a current browser" is a bad
+ * message to show someone whose browser is current.
+ */
+function tryContext(canvas, type, attrs) {
+  let reason = '';
+  const onError = (e) => { reason = e.statusMessage || ''; };
+  canvas.addEventListener('webglcontextcreationerror', onError);
+  let ctx = null;
+  try {
+    ctx = canvas.getContext(type, attrs);
+  } catch (e) {
+    reason = String((e && e.message) || e);
+  }
+  canvas.removeEventListener('webglcontextcreationerror', onError);
+  return { ctx, reason };
+}
+
 export function getContext(canvas) {
-  const gl = canvas.getContext('webgl2', {
+  let got = tryContext(canvas, 'webgl2', {
     alpha: false,
     antialias: false,
     depth: false,
     stencil: false,
     powerPreference: 'high-performance',
   });
-  if (!gl) return null;
+
+  // Retry bare. A driver that refuses one particular attribute combination will
+  // often hand over a default context quite happily.
+  if (!got.ctx) got = tryContext(canvas, 'webgl2', undefined);
+
+  if (!got.ctx) {
+    getContext.reason = got.reason;
+    return null;
+  }
+  const gl = got.ctx;
   // Requesting these here makes float textures renderable / filterable for
   // every piece; individual pieces still feature-detect before relying on them.
   gl.getExtension('EXT_color_buffer_float');
@@ -28,6 +59,36 @@ export function getContext(canvas) {
   gl.getExtension('OES_texture_float_linear');
   gl._emptyVAO = gl.createVertexArray();
   return gl;
+}
+
+/**
+ * Work out what the browser will actually give us, for the failure screen.
+ * A canvas is locked to one context type once asked, so each probe needs its
+ * own throwaway.
+ */
+export function diagnose() {
+  const probe = (type) => tryContext(document.createElement('canvas'), type, undefined);
+
+  const two = probe('webgl2');
+  const one = two.ctx ? { ctx: two.ctx, reason: '' } : probe('webgl');
+
+  let renderer = '';
+  const ctx = two.ctx || one.ctx;
+  if (ctx) {
+    const dbg = ctx.getExtension('WEBGL_debug_renderer_info');
+    renderer = (dbg && ctx.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) ||
+               ctx.getParameter(ctx.RENDERER) || '';
+  }
+
+  return {
+    webgl2: !!two.ctx,
+    webgl1: !!one.ctx,
+    reason: getContext.reason || two.reason || one.reason || '',
+    renderer,
+    // SwiftShader is Chrome's CPU fallback. It reports itself as a renderer, so
+    // "it works" and "it is using the GPU" are different questions.
+    software: /swiftshader|software|llvmpipe|microsoft basic/i.test(renderer),
+  };
 }
 
 /**

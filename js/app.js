@@ -1,4 +1,4 @@
-import { getContext } from './gl.js';
+import { getContext, diagnose } from './gl.js';
 import { createUI } from './ui.js';
 import { PIECES } from '../pieces/registry.js';
 
@@ -6,8 +6,57 @@ const canvas = document.getElementById('stage');
 const gl = getContext(canvas);
 
 if (!gl) {
-  document.getElementById('fatal').hidden = false;
+  showFatal();
   throw new Error('WebGL2 unavailable');
+}
+
+/**
+ * Explain the actual failure. Almost nobody hitting this is on a browser too
+ * old for WebGL2 — far more often acceleration is switched off, or the GPU is
+ * blocklisted over a driver bug, and the fix is a setting rather than a
+ * different browser.
+ */
+function showFatal() {
+  const d = diagnose();
+  const el = document.getElementById('fatal');
+  const chromium = /Chrome|Edg|Chromium/.test(navigator.userAgent) && !/Firefox/.test(navigator.userAgent);
+  const settings = chromium ? 'chrome://gpu' : 'about:support';
+
+  let headline;
+  let advice;
+  if (d.webgl1 && !d.webgl2) {
+    headline = 'WebGL2 unavailable';
+    advice = 'This browser has WebGL1 but not WebGL2, which usually means an ' +
+             'out-of-date graphics driver. Updating the GPU driver normally fixes it.';
+  } else if (!d.webgl1) {
+    headline = 'Graphics acceleration is off';
+    advice = 'No WebGL context of any version could be created, so this is not ' +
+             'about the browser version. Hardware acceleration is most likely ' +
+             'disabled, or the GPU has been blocklisted over a driver issue.' +
+             (chromium ? ' Check Settings → System → "Use graphics acceleration when available", then restart the browser.' : '');
+  } else {
+    headline = 'WebGL2 unavailable';
+    advice = 'A WebGL2 context could not be created on this machine.';
+  }
+
+  el.innerHTML = '';
+  const h = document.createElement('h2');
+  h.textContent = headline;
+  const p = document.createElement('p');
+  p.textContent = advice;
+  el.append(h, p);
+
+  const detail = [];
+  if (d.reason) detail.push(`reason: ${d.reason}`);
+  if (d.renderer) detail.push(`renderer: ${d.renderer}`);
+  detail.push(`webgl2: ${d.webgl2 ? 'yes' : 'no'} · webgl1: ${d.webgl1 ? 'yes' : 'no'}`);
+  if (d.software) detail.push('running on a software renderer, not the GPU');
+  detail.push(`for the full picture, open ${settings}`);
+
+  const pre = document.createElement('pre');
+  pre.textContent = detail.join('\n');
+  el.append(pre);
+  el.hidden = false;
 }
 
 /* ------------------------------------------------------------- input --- */
