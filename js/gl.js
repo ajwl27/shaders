@@ -89,6 +89,7 @@ export class Program {
       this.uniforms.set(name, {
         loc: gl.getUniformLocation(p, info.name),
         type: info.type,
+        size: info.size,
       });
     }
     this._unit = 0;
@@ -105,6 +106,21 @@ export class Program {
     const u = this.uniforms.get(name);
     if (!u) return this; // Dead uniform — optimised out. Silently ignore.
     const gl = this.gl;
+
+    // Array uniforms need the vector forms, and the reflected location is
+    // element zero, so one call fills the whole array.
+    if (u.size > 1) {
+      switch (u.type) {
+        case gl.FLOAT: gl.uniform1fv(u.loc, value); break;
+        case gl.FLOAT_VEC2: gl.uniform2fv(u.loc, value); break;
+        case gl.FLOAT_VEC3: gl.uniform3fv(u.loc, value); break;
+        case gl.FLOAT_VEC4: gl.uniform4fv(u.loc, value); break;
+        case gl.INT: gl.uniform1iv(u.loc, value); break;
+        default: throw new Error(`unhandled array uniform type for "${name}"`);
+      }
+      return this;
+    }
+
     switch (u.type) {
       case gl.FLOAT: gl.uniform1f(u.loc, value); break;
       case gl.FLOAT_VEC2: gl.uniform2f(u.loc, value[0], value[1]); break;

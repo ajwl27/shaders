@@ -162,3 +162,43 @@ console and for correct resource release across repeated swaps.
 
 Repo `ajwl27/shaders`, public, GitHub Pages from `main` at root. No CI required —
 Pages serves the static tree directly. One commit and push per piece as it lands.
+
+## As built — deviations from this design
+
+Recorded after implementation. The design above was right about the shape of the
+thing and wrong about several details that turned out to decide whether it
+worked at all.
+
+**Silhouettes are analytic, not raymarched.** The design assumed the loss pass
+would raymarch the SDF at 192². Under orthographic projection the outline of a
+sphere is exactly a disc, so the silhouette is a 2D signed distance per
+primitive with no marching whatsoever — a few hundred times cheaper, and exact.
+The optimiser resolution dropped to 128² as a result.
+
+**Plain SPSA was not enough.** The design took for granted that two evaluations
+per step would suffice. They do not: one scalar per step to steer ~450
+parameters converges, but far too slowly to watch. The update pass now reads the
+error *local to each primitive's projection* from the 16×16 partial reduction,
+turning one measurement per step into N. This is the single largest change and
+the reason the piece is worth looking at.
+
+**Three failure modes the design did not anticipate**, each of which produced a
+scene that was empty or frozen, and each fixed in the update shader:
+per-primitive normalisation amplifying the noise of idle primitives until their
+radii saturated at zero; unbounded raw parameters drifting past the point where
+`tanh`/`sigmoid` derivatives underflow, killing primitives permanently; and a
+perturbation size `c₀` taken from SPSA convention that was larger than a
+primitive's own radius, so the finite difference measured no local slope at all.
+
+**The beauty pass needed a long lens.** The optimiser matches orthographic
+silhouettes. At the originally planned field of view the perspective
+foreshortening was enough that the rendered shape visibly failed to be the thing
+that had been drawn. Camera pulled back, focal length roughly doubled.
+
+**Loss readback works as designed**, and the numeric verification criterion held:
+converged loss on the mug preset is 0.0038 against 0.175 for an empty scene.
+
+**Scope**: all four pieces landed. Swarm, named in the design as the cuttable
+one, was not cut — and changed formulation from O(N²) pairwise forces to a
+density-field approximation, which is why it runs 262k particles rather than the
+"~250k" the design optimistically assumed pairwise forces could reach.
