@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGL2 probe — GPU Atelier</title>
+<style>
+  :root { --bg:#07080a; --text:#e9eaee; --dim:#767c88; --dimmer:#4b515c;
+          --accent:#c8f135; --bad:#ff6b5e; --line:rgba(255,255,255,.09); }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:38px 22px 60px; background:var(--bg); color:var(--text);
+         font:13px/1.6 ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size:14px; letter-spacing:.18em; text-transform:uppercase; margin:0 0 4px; }
+  h1 span { color: var(--accent); }
+  .sub { color:var(--dimmer); font-size:11px; letter-spacing:.16em;
+         text-transform:uppercase; margin:0 0 28px; }
+  #verdict { padding:16px 18px; border:1px solid var(--line); border-radius:4px;
+             margin-bottom:22px; font-size:13px; line-height:1.65; }
+  #verdict.good { border-color:var(--accent); background:rgba(200,241,53,.07); }
+  #verdict.bad  { border-color:var(--bad);    background:rgba(255,107,94,.07); }
+  #verdict b { color: var(--accent); }
+  #verdict.bad b { color: var(--bad); }
+  table { width:100%; border-collapse:collapse; margin-bottom:24px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line);
+           vertical-align:top; font-size:11.5px; }
+  th { color:var(--dimmer); font-weight:500; letter-spacing:.12em;
+       text-transform:uppercase; font-size:9.5px; }
+  td.ok   { color:var(--accent); }
+  td.fail { color:var(--bad); }
+  td.why  { color:var(--dim); word-break:break-word; }
+  pre { padding:14px; border:1px solid var(--line); border-radius:4px;
+        background:rgba(255,255,255,.03); color:var(--dim); font-size:11px;
+        white-space:pre-wrap; word-break:break-word; user-select:text; }
+  button { font:inherit; font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+           color:var(--dim); background:transparent; border:1px solid rgba(255,255,255,.18);
+           border-radius:3px; padding:9px 16px; cursor:pointer; margin-bottom:18px; }
+  button:hover { color:var(--accent); border-color:var(--accent); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>WebGL2 <span>probe</span></h1>
+  <p class="sub">works out exactly which context request your browser refuses</p>
+
+  <div id="verdict">running…</div>
+  <table id="table">
+    <thead><tr><th>attempt</th><th>result</th><th>reason reported by the browser</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <button id="copy">copy report</button>
+  <pre id="report"></pre>
+  <p style="color:var(--dimmer);font-size:11px">
+    Back to the <a href="./">gallery</a>.
+  </p>
+</main>
+
+<script>
+// Deliberately a single plain script: no modules, no imports, no dependencies.
+// A diagnostic that can itself fail to load is worth nothing.
+(function () {
+  var rows = [];
+
+  function attempt(label, type, attrs, canvasFactory) {
+    var canvas = (canvasFactory || function () { return document.createElement('canvas'); })();
+    var reason = '';
+    function onErr(e) { reason = e.statusMessage || '(no status message)'; }
+    if (canvas.addEventListener) canvas.addEventListener('webglcontextcreationerror', onErr);
+    var ctx = null;
+    try { ctx = canvas.getContext(type, attrs); }
+    catch (e) { reason = 'threw: ' + ((e && e.message) || e); }
+    if (canvas.removeEventListener) canvas.removeEventListener('webglcontextcreationerror', onErr);
+    rows.push({ label: label, ok: !!ctx, reason: ctx ? '' : (reason || '(returned null, no reason given)') });
+    return ctx;
+  }
+
+  var SITE_ATTRS = { alpha: false, antialias: false, depth: false, stencil: false,
+                     powerPreference: 'high-performance' };
+
+  // A canvas that is actually in the document, as the gallery's is. A detached
+  // canvas can be handed a different adapter entirely — on this machine it gets
+  // the Microsoft Basic Render Driver rather than the discrete GPU — which would
+  // make the reported renderer a lie.
+  function domCanvas() {
+    var c = document.createElement('canvas');
+    c.width = c.height = 32;
+    c.style.cssText = 'position:fixed;left:-100px;top:-100px;width:32px;height:32px';
+    document.body.appendChild(c);
+    return c;
+  }
+
+  // Ordered so the first success tells us the narrowest thing that works.
+  var got = {};
+  got.siteAttrs   = attempt('webgl2, exactly what the gallery asks for', 'webgl2', SITE_ATTRS, domCanvas);
+  got.bare        = attempt('webgl2, no attributes at all', 'webgl2', undefined);
+  got.noCaveat    = attempt('webgl2, failIfMajorPerformanceCaveat: false', 'webgl2',
+                            { failIfMajorPerformanceCaveat: false });
+  got.lowPower    = attempt('webgl2, powerPreference: low-power', 'webgl2',
+                            { powerPreference: 'low-power' });
+  got.defaultPow  = attempt('webgl2, powerPreference: default', 'webgl2',
+                            { powerPreference: 'default' });
+  got.withDepth   = attempt('webgl2, depth + stencil + antialias on', 'webgl2',
+                            { depth: true, stencil: true, antialias: true });
+  got.one         = attempt('webgl1 (for comparison)', 'webgl', undefined);
+  got.experimental= attempt('experimental-webgl (for comparison)', 'experimental-webgl', undefined);
+
+  if (typeof OffscreenCanvas !== 'undefined') {
+    attempt('webgl2 on an OffscreenCanvas', 'webgl2', undefined,
+            function () { return new OffscreenCanvas(64, 64); });
+  }
+
+  var working = got.siteAttrs || got.bare || got.noCaveat || got.lowPower ||
+                got.defaultPow || got.withDepth || null;
+
+  // Interrogate a live context *before* anything below can disturb it. Chrome
+  // caps live contexts per renderer and silently drops the oldest to make room,
+  // so a probe that opens a pile of contexts first will find the one it wanted
+  // to ask about already dead, and report nulls for everything.
+  var info = {};
+  var probe = working || got.one;
+  if (probe) {
+    try {
+      var dbg = probe.getExtension('WEBGL_debug_renderer_info');
+      info.renderer = (dbg && probe.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) ||
+                      probe.getParameter(probe.RENDERER);
+      info.vendor = (dbg && probe.getParameter(dbg.UNMASKED_VENDOR_WEBGL)) ||
+                    probe.getParameter(probe.VENDOR);
+      info.version = probe.getParameter(probe.VERSION);
+      info.glsl = probe.getParameter(probe.SHADING_LANGUAGE_VERSION);
+      info.maxTexture = probe.getParameter(probe.MAX_TEXTURE_SIZE);
+      info.contextLost = probe.isContextLost();
+    } catch (e) { info.error = String(e); }
+  }
+  if (working) {
+    info.colorBufferFloat = !!working.getExtension('EXT_color_buffer_float');
+    info.colorBufferHalfFloat = !!working.getExtension('EXT_color_buffer_half_float');
+    info.floatLinear = !!working.getExtension('OES_texture_float_linear');
+  }
+
+  // Is there room for one more context? Released immediately, so this cannot
+  // evict anything. The context-limit case announces itself in the reason
+  // strings above anyway ("Too many active WebGL contexts").
+  var spare = false;
+  try {
+    var extra = document.createElement('canvas').getContext('webgl2');
+    spare = !!extra;
+    if (extra) {
+      var lose = extra.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+    }
+  } catch (e) { /* leave spare false */ }
+
+  var limitHit = rows.some(function (r) { return /too many/i.test(r.reason); });
+
+  // --- verdict -------------------------------------------------------------
+
+  var v = document.getElementById('verdict');
+  var msg;
+  if (working && got.siteAttrs) {
+    v.className = 'good';
+    msg = '<b>WebGL2 works here.</b> The gallery should run in this browser. If it ' +
+          'still shows the failure screen, you are being served a cached copy — ' +
+          'hard-reload with Ctrl+Shift+R, or open the gallery in a private window.';
+  } else if (working) {
+    v.className = 'good';
+    msg = '<b>WebGL2 works, but not with the attributes the gallery asked for.</b> ' +
+          'The first successful row below names the combination that does work; ' +
+          'that is a bug in the gallery and I can fix it.';
+  } else if (limitHit) {
+    v.className = 'bad';
+    msg = '<b>You have hit the browser limit on live WebGL contexts.</b> Nothing ' +
+          'is wrong with your GPU or the site — close other tabs using 3D ' +
+          'graphics, then reload this page.';
+  } else if (got.one || got.experimental) {
+    v.className = 'bad';
+    msg = '<b>WebGL1 works, WebGL2 does not.</b> The GPU is fine and acceleration ' +
+          'is on, so this is the browser refusing an ES 3.0 context rather than a ' +
+          'hardware limit. Check chrome://flags for anything WebGL-related, ' +
+          'and try a Guest window to rule out extensions and policy.';
+  } else {
+    v.className = 'bad';
+    msg = '<b>No WebGL of any version.</b> Graphics acceleration is off, or ' +
+          'blocked by policy or an extension.';
+  }
+  v.innerHTML = msg + '<br><br><span style="color:var(--dim)">Room for another context: ' +
+                (spare ? 'yes' : 'no — the context limit is likely the problem') + '</span>';
+
+  // --- table ---------------------------------------------------------------
+
+  var tb = document.querySelector('#table tbody');
+  rows.forEach(function (r) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + r.label + '</td>' +
+                   '<td class="' + (r.ok ? 'ok' : 'fail') + '">' + (r.ok ? 'works' : 'refused') + '</td>' +
+                   '<td class="why">' + (r.reason || '—') + '</td>';
+    tb.appendChild(tr);
+  });
+
+  // --- copyable report -----------------------------------------------------
+
+  var lines = ['userAgent: ' + navigator.userAgent,
+               'inIframe: ' + (window.top !== window.self),
+               'roomForAnotherContext: ' + spare, ''];
+  rows.forEach(function (r) {
+    lines.push((r.ok ? 'OK    ' : 'FAIL  ') + r.label + (r.reason ? '  <- ' + r.reason : ''));
+  });
+  lines.push('');
+  lines.push('# from the probe canvas. Browsers sometimes assign a small canvas a');
+  lines.push('# different adapter than a full-size one, so this may name the software');
+  lines.push('# fallback even when the gallery itself gets the discrete GPU.');
+  for (var k in info) lines.push(k + ': ' + info[k]);
+  var text = lines.join('\n');
+  document.getElementById('report').textContent = text;
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var btn = this;
+    navigator.clipboard.writeText(text).then(
+      function () { btn.textContent = 'copied'; },
+      function () { btn.textContent = 'select the text below instead'; });
+  });
+})();
+</script>
+</body>
+</html>
