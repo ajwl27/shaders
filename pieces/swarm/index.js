@@ -22,7 +22,13 @@ import { createMatrix, MATRIX_PRESETS, SPECIES_COLOURS } from './matrix.js';
 
 const TEX = 512;              // particle state texture is TEX x TEX
 const COUNT = TEX * TEX;      // 262,144
-const GRID_H = 256;
+
+// Coarser than it looks like it should be, deliberately. The density grid is a
+// sampled estimate of a continuous field, and its shot noise goes as
+// 1/sqrt(particles per cell). At 256 rows that is about two particles per cell
+// and 70% noise, which swamps the real gradients completely — the swarm just
+// jitters and never organises. At 144 rows it is nearer nine per cell.
+const GRID_H = 144;
 
 const PARTICLE_VS = `#version 300 es
 uniform sampler2D uState;
@@ -97,6 +103,21 @@ uniform float uRepel;
 uniform float uMaxSpeed;
 uniform vec2 uPointer;
 uniform float uPointerForce;
+uniform float uJitter;
+uniform int uFrame;
+
+uint hashU(uint x) {
+  x ^= x >> 16; x *= 0x7feb352du;
+  x ^= x >> 15; x *= 0x846ca68bu;
+  x ^= x >> 16;
+  return x;
+}
+
+vec2 hash2(int a, int b) {
+  uint h = hashU(uint(a) * 0x9e3779b9u ^ hashU(uint(b) + 0x68bc21ebu));
+  uint g = hashU(h);
+  return vec2(float(h & 0xffffu), float(g & 0xffffu)) / 65535.0;
+}
 
 void main() {
   ivec2 tc = ivec2(gl_FragCoord.xy);
@@ -107,6 +128,17 @@ void main() {
   vec2 pos = st.xy;
   vec2 vel = st.zw;
   vec2 uv = pos / uDomain;
+
+  // Per-particle sampling jitter, redrawn every frame.
+  //
+  // The density grid is reconstructed bilinearly, so its derivative is
+  // discontinuous at every texel boundary. Sampling the gradient at a fixed
+  // offset means every particle sees the same grid-aligned pattern of
+  // force zeros and settles into them — clusters visibly crystallise into a
+  // hatch. Giving each particle its own sub-texel offset decorrelates them from
+  // the grid and the lattice dissolves; what is left behaves like a small
+  // thermal noise, which is physically the right sort of error to have.
+  uv += (hash2(idx, uFrame) - 0.5) * uJitter * uGridTexel;
 
   // Central differences of the wide field: all four species in one fetch each.
   vec4 wl = texture(uWide, uv - vec2(uGridTexel.x, 0.0));
@@ -184,15 +216,20 @@ export default {
       hf,
       ff,
       input: ctx.input,
-      attract: 42,
-      repel: 26,
-      friction: 2.4,
-      maxSpeed: 1.05,
+      attract: 30,
+      repel: 8,
+      friction: 3.0,
+      maxSpeed: 0.55,
       pointSize: 1.6,
       brightness: 0.30,
       exposure: 1.25,
-      wideRadius: 1.5,
-      narrowRadius: 0.45,
+      // Attraction has to act over a visibly longer range than repulsion or
+      // there is no scale separation and nothing forms. Six passes against one
+      // gives roughly a 4:1 ratio of widths.
+      wideIters: 6,
+      narrowIters: 2,
+      jitter: 3.2,
+      frame: 0,
       timeScale: 1.0,
       width: 1,
       height: 1,
@@ -225,8 +262,8 @@ export default {
       format: (v) => v.toFixed(0) }, (v) => { s.repel = v; });
     ui.slider('friction', { min: 0.2, max: 8, value: s.friction, step: 0.05 },
       (v) => { s.friction = v; });
-    ui.slider('interaction range', { min: 0.4, max: 3.5, value: s.wideRadius, step: 0.05 },
-      (v) => { s.wideRadius = v; });
+    ui.slider('interaction range', { min: 1, max: 12, value: s.wideIters, step: 1,
+      format: (v) => v.toFixed(0) }, (v) => { s.wideIters = v | 0; });
     ui.slider('time scale', { min: 0.1, max: 2.5, value: s.timeScale, step: 0.05 },
       (v) => { s.timeScale = v; });
 
@@ -235,6 +272,8 @@ export default {
       (v) => { s.pointSize = v; });
     ui.slider('brightness', { min: 0.05, max: 1.2, value: s.brightness, step: 0.01 },
       (v) => { s.brightness = v; });
+    ui.slider('grid jitter', { min: 0, max: 6, value: s.jitter, step: 0.1 },
+      (v) => { s.jitter = v; });
     ui.button('scatter', () => { s.reseed = true; });
     ui.note('Drag to push the swarm around.');
 
@@ -307,8 +346,12 @@ export default {
 
     // 2. Two blur scales: wide drives attraction, narrow drives repulsion.
     const texel = [1 / s.gridW, 1 / s.gridH];
-    blurInto(s, s.grid.texture, s.wide, s.wideRadius, texel);
-    blurInto(s, s.grid.texture, s.narrow, s.narrowRadius, texel);
+    blurInto(s, s.grid.texture, s.wide, 1.4, s.wideIters, texel);
+    // The narrow field needs more than a single pass. Repulsion is the
+    // strongest, shortest-range force, and if its field still has structure at
+    // the texel scale the particles fall into the grid and visibly crystallise
+    // into a hatch pattern inside every cluster.
+    blurInto(s, s.grid.texture, s.narrow, 1.0, s.narrowIters, texel);
 
     // 3. Integrate.
     const inp = s.input;
@@ -328,6 +371,8 @@ export default {
       uMaxSpeed: s.maxSpeed,
       uPointer: [inp.nx * s.domain[0], inp.ny * s.domain[1]],
       uPointerForce: inp.down ? 3.2 : 0,
+      uJitter: s.jitter,
+      uFrame: s.frame++,
     });
     draw(gl);
     s.state.swap();
@@ -363,20 +408,30 @@ export default {
   },
 };
 
-/** Separable Gaussian from src into dst, via the scratch target. */
-function blurInto(s, src, dst, radius, texel) {
+/**
+ * Separable Gaussian from src into dst, iterated.
+ *
+ * Iterating a small kernel rather than scaling one kernel's tap offsets is the
+ * point here. The nine-tap kernel has fixed offsets tuned for a narrow sigma;
+ * multiplying them by four to get a wide blur just samples a wide Gaussian at
+ * five points and aliases badly. Repeated convolution keeps every pass properly
+ * sampled and the variances add, so n passes widen by sqrt(n).
+ */
+function blurInto(s, src, dst, radius, iterations, texel) {
   const gl = s.gl;
-  s.blurA.bind();
-  s.blur.use().setAll({
-    uSrc: src, uDir: [radius, 0], uTexel: texel, uRes: [s.gridW, s.gridH],
-  });
-  draw(gl);
+  const res = [s.gridW, s.gridH];
+  let source = src;
+  for (let i = 0; i < iterations; i++) {
+    s.blurA.bind();
+    s.blur.use().setAll({ uSrc: source, uDir: [radius, 0], uTexel: texel, uRes: res });
+    draw(gl);
 
-  dst.bind();
-  s.blur.use().setAll({
-    uSrc: s.blurA.texture, uDir: [0, radius], uTexel: texel, uRes: [s.gridW, s.gridH],
-  });
-  draw(gl);
+    dst.bind();
+    s.blur.use().setAll({ uSrc: s.blurA.texture, uDir: [0, radius], uTexel: texel, uRes: res });
+    draw(gl);
+
+    source = dst.texture;
+  }
 }
 
 const COLOUR_ARRAY = new Float32Array(SPECIES_COLOURS.flat());

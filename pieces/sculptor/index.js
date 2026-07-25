@@ -36,7 +36,7 @@ export default {
       gl,
       fmt,
       input: ctx.input,
-      count: 56,
+      count: 96,
       step: 0,
       running: true,
       stepsPerFrame: 8,
@@ -60,7 +60,13 @@ export default {
       // moving toward; too wide and it drifts back to a single global signal.
       locality: 1.6,
 
-      fuse: 0.14,
+      // The loss models the silhouette as a 2D smooth-min over projected discs,
+      // which is not exactly the outline of the 3D smooth-min union — and the
+      // gap between the two grows with the blend radius. Too low and the render
+      // is visibly a heap of loose spheres; too high and the 3D blend bulges in
+      // ways the 2D proxy never accounted for, so the shape stops being the
+      // thing that was drawn. This is where the two agree well enough.
+      fuse: 0.11,
       // Coverage softness, annealed wide -> narrow. A wide edge smooths the
       // landscape so distant primitives still feel a pull; a narrow one is
       // needed at the end to resolve the actual outline.

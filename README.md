@@ -15,14 +15,14 @@ Four real-time WebGL2 pieces. No build step, no dependencies, no framework.
 
 ## The Gradient Descent Sculptor
 
-You draw a front view and a side view. A cloud of 64-odd raymarched blobs then
+You draw a front view and a side view. A cloud of 96 raymarched blobs then
 *learns to become your drawing* — twitching, overshooting, and settling into
 shape while you watch, at 60fps.
 
 This is real differentiable rendering, not an animation of one. The reason you
 normally see this in papers rather than in browser tabs is cost: finite-
-difference gradients need two renders **per parameter**, and 56 primitives is
-448 parameters, so 896 renders per optimisation step.
+difference gradients need two renders **per parameter**, and 96 primitives is
+768 parameters, so 1536 renders per optimisation step.
 
 [SPSA](https://www.jhuapl.edu/spsa/) gets around it. Perturb *every* parameter
 at once by a random ±1 vector `Δ`, render twice, and
@@ -51,7 +51,8 @@ dimensions, mostly reflecting the perturbations of primitives that have nothing
 to do with the parameter being updated. But a primitive only changes pixels it
 covers. So the update pass instead reads the error *near where each primitive
 projects*, out of the 16×16 partial reduction the chain already computes. One
-measurement per step becomes N of them, from the same two renders.
+measurement per step becomes N of them, from the same two renders. This is the
+single largest change and the reason the piece is worth watching.
 
 **Normalise globally, not per primitive.** Dividing each primitive's signal by
 its own running magnitude seems obviously right and is a trap: a primitive in a
@@ -71,8 +72,14 @@ perturbation displaced a primitive by more than twice its own radius, so the
 finite difference was comparing two unrelated arrangements rather than measuring
 a local slope. Fixing this one number improved the converged loss fivefold.
 
-Converged loss on the mug preset is **0.0038**, against **0.175** for an empty
-scene — a 46× improvement, reached in roughly half a second.
+Converged loss on the mug preset is **0.0036**, against **0.175** for an empty
+scene — a 48× improvement. It is most of the way there within about half a
+second, and runs the whole thing at 8.4 ms/frame on an RTX 3080.
+
+One honest limitation: only two views are constrained, so the result is a
+[visual hull](https://en.wikipedia.org/wiki/Visual_hull). It matches your
+drawing from the front and from the side and is free to be lumpy in between —
+which is exactly what you see when it rotates.
 
 ## Swarm
 
